@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Socket.IO Notification</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-100 flex items-center justify-center h-screen">
+    <div class="bg-white p-8 rounded-lg shadow-lg text-center w-96">
+        <h1 class="text-2xl font-bold text-gray-800 mb-4">📢 Socket.IO Notification</h1>
+        <button id="notifyBtn"
+            class="px-6 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-md hover:bg-blue-700 transition duration-300">
+            Gửi Thông Báo
+        </button>
+    </div>
+
+    <script>
+        const socket = io();
+
+        document.getElementById("notifyBtn").addEventListener("click", () => {
+            const notification = { title: "Thông báo mới!", message: "Có một thông báo vừa được gửi." };
+            socket.emit("sendNotification", notification);
+        });
+
+        socket.on("receiveNotification", (data) => {
+            alert(`📢 ${data.title}\n${data.message}`);
+        });
+    </script>
+</body>
+
+</html>
