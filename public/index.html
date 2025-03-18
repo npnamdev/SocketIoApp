@@ -7,64 +7,105 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="/socket.io/socket.io.js"></script>
 </head>
-<body class="flex items-center justify-center min-h-screen bg-gray-200">
+<body class="flex items-center justify-center h-[100dvh] bg-gray-200">
 
     <!-- Giao diện đăng nhập -->
     <div id="loginScreen" class="bg-white p-6 rounded-lg shadow-lg w-96">
         <h2 class="text-2xl font-bold text-center mb-4">Login</h2>
-        <input id="username" type="text" placeholder="Username" class="w-full p-2 border rounded mb-2">
-        <input id="password" type="password" placeholder="Password" class="w-full p-2 border rounded mb-2">
+        <input id="username" type="text" placeholder="Username" class="w-full px-3 py-2 border rounded mb-2">
+        <input id="password" type="password" placeholder="Password" class="w-full px-3 py-2 border rounded mb-2">
         <button id="loginBtn" class="w-full bg-blue-500 text-white py-2 rounded">Login</button>
-        <p id="errorText" class="text-red-500 text-sm mt-2 hidden">Sai tên đăng nhập hoặc mật khẩu!</p>
+        <p id="errorMessage" class="text-red-500 text-sm mt-2 hidden"></p>
     </div>
 
     <!-- Giao diện chat -->
-    <div id="chatScreen" class="hidden w-full h-dvh bg-white p-6 rounded-lg shadow-lg">
-        <h2 class="text-xl font-bold text-center mb-4">Chat Room</h2>
-        <div id="messages" class="h-[calc(100%-200px)] overflow-y-auto border p-3 rounded bg-gray-100"></div>
-        <input id="messageInput" type="text" placeholder="Nhập tin nhắn..." class="w-full p-2 border rounded mt-3">
-        <button id="sendBtn" class="w-full bg-green-500 text-white py-2 rounded mt-2">Gửi</button>
+    <div id="chatScreen" class="hidden flex flex-col h-[100dvh] w-full max-w-lg bg-white shadow-lg">
+        <div class="bg-blue-500 text-white p-4 text-center text-lg font-bold">Chat Room</div>
+        <div id="messages" class="flex-1 overflow-y-auto p-4 space-y-2"></div>
+        <div class="p-4 flex">
+            <input id="messageInput" type="text" class="flex-1 px-3 py-2 border rounded" placeholder="Type a message...">
+            <button id="sendBtn" class="ml-2 bg-blue-500 text-white px-4 py-2 rounded">Send</button>
+        </div>
     </div>
 
     <script>
         const socket = io();
-        let username = "";
+        const loginScreen = document.getElementById("loginScreen");
+        const chatScreen = document.getElementById("chatScreen");
+        const loginBtn = document.getElementById("loginBtn");
+        const usernameInput = document.getElementById("username");
+        const passwordInput = document.getElementById("password");
+        const errorMessage = document.getElementById("errorMessage");
+        const messagesDiv = document.getElementById("messages");
+        const messageInput = document.getElementById("messageInput");
+        const sendBtn = document.getElementById("sendBtn");
 
-        document.getElementById("loginBtn").addEventListener("click", async () => {
-            const user = document.getElementById("username").value;
-            const pass = document.getElementById("password").value;
+        // Kiểm tra nếu đã đăng nhập trước đó
+        const savedUsername = localStorage.getItem("username");
+        if (savedUsername) {
+            showChatScreen(savedUsername);
+        }
 
-            const response = await fetch("/api/login", {
+        loginBtn.addEventListener("click", async () => {
+            const username = usernameInput.value.trim();
+            const password = passwordInput.value.trim();
+
+            if (!username || !password) return;
+
+            const res = await fetch("/api/login", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username: user, password: pass })
+                body: JSON.stringify({ username, password }),
             });
 
-            const data = await response.json();
+            const data = await res.json();
+
             if (data.success) {
-                username = data.username;
-                document.getElementById("loginScreen").classList.add("hidden");
-                document.getElementById("chatScreen").classList.remove("hidden");
-                socket.emit("userJoined", username);
+                localStorage.setItem("username", username);
+                showChatScreen(username);
             } else {
-                document.getElementById("errorText").classList.remove("hidden");
+                errorMessage.textContent = data.message;
+                errorMessage.classList.remove("hidden");
             }
         });
 
-        document.getElementById("sendBtn").addEventListener("click", () => {
-            const message = document.getElementById("messageInput").value;
-            if (message.trim() !== "") {
-                socket.emit("sendMessage", { username, text: message });
-                document.getElementById("messageInput").value = "";
-            }
+        function showChatScreen(username) {
+            loginScreen.classList.add("hidden");
+            chatScreen.classList.remove("hidden");
+
+            // Gửi sự kiện tham gia chat
+            socket.emit("userJoined", username);
+
+            // Lấy tin nhắn cũ
+            fetch("/api/messages")
+                .then(res => res.json())
+                .then(messages => {
+                    messagesDiv.innerHTML = "";
+                    messages.forEach(msg => addMessage(msg.username, msg.text));
+                });
+
+            // Lắng nghe tin nhắn mới từ server
+            socket.on("receiveMessage", (msg) => {
+                addMessage(msg.username, msg.text);
+            });
+        }
+
+        sendBtn.addEventListener("click", () => {
+            const message = messageInput.value.trim();
+            if (!message) return;
+            
+            const username = localStorage.getItem("username");
+            socket.emit("sendMessage", { username, text: message });
+            messageInput.value = "";
         });
 
-        socket.on("receiveMessage", (data) => {
-            const msgContainer = document.getElementById("messages");
-            msgContainer.innerHTML += `<p><strong>${data.username}:</strong> ${data.text}</p>`;
-            msgContainer.scrollTop = msgContainer.scrollHeight;
-        });
+        function addMessage(username, text) {
+            const messageElem = document.createElement("div");
+            messageElem.classList.add("p-2", "rounded", "bg-gray-100", "mb-1");
+            messageElem.innerHTML = `<strong>${username}:</strong> ${text}`;
+            messagesDiv.appendChild(messageElem);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
     </script>
-
 </body>
 </html>
