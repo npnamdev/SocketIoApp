@@ -4,32 +4,110 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Socket.IO Notification</title>
+    <title>Socket.IO Private Chat</title>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 
-<body class="bg-gray-100 flex items-center justify-center h-screen">
-    <div class="bg-white p-8 rounded-lg shadow-lg text-center w-96">
-        <h1 class="text-2xl font-bold text-gray-800 mb-4">📢 Socket.IO Notification</h1>
-        <button id="notifyBtn"
-            class="px-6 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-md hover:bg-blue-700 transition duration-300">
-            Gửi Thông Báo
-        </button>
+<body class="bg-gray-100 h-screen flex">
+
+    <!-- DANH SÁCH USER BÊN TRÁI -->
+    <div class="w-1/4 bg-white p-4 shadow-lg">
+        <h2 class="text-lg font-bold mb-3">📜 Danh sách Chat</h2>
+        <ul id="chatList" class="space-y-2">
+            <li class="p-2 bg-gray-200 rounded cursor-pointer" onclick="openChat('general')">💬 Chat Tổng</li>
+        </ul>
+    </div>
+
+    <!-- NỘI DUNG CHAT BÊN PHẢI -->
+    <div class="w-3/4 p-4 flex flex-col">
+        <h2 class="text-lg font-bold mb-3" id="chatTitle">💬 Chat Tổng</h2>
+        <div id="messages" class="flex-1 overflow-y-auto border p-3 bg-gray-50 rounded"></div>
+        <div class="mt-2 flex">
+            <input id="messageInput" type="text" placeholder="Nhập tin nhắn..."
+                class="flex-1 p-2 border rounded outline-none">
+            <button id="sendBtn" class="ml-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded">
+                Gửi
+            </button>
+        </div>
     </div>
 
     <script>
         const socket = io();
+        const chatList = document.getElementById("chatList");
+        const messages = document.getElementById("messages");
+        const chatTitle = document.getElementById("chatTitle");
+        const messageInput = document.getElementById("messageInput");
+        const sendBtn = document.getElementById("sendBtn");
 
-        document.getElementById("notifyBtn").addEventListener("click", () => {
-            const notification = { title: "Thông báo mới!", message: "Có một thông báo vừa được gửi." };
-            socket.emit("sendNotification", notification);
+        let username = prompt("Nhập tên của bạn:");
+        socket.emit("login", username);
+
+        let currentChat = "general";
+
+        // Cập nhật danh sách người dùng
+        socket.on("userList", (users) => {
+            chatList.innerHTML = `<li class="p-2 bg-gray-200 rounded cursor-pointer" onclick="openChat('general')">💬 Chat Tổng</li>`;
+            users.forEach((user) => {
+                if (user !== username) {
+                    const li = document.createElement("li");
+                    li.textContent = `👤 ${user}`;
+                    li.classList.add("p-2", "bg-gray-100", "rounded", "cursor-pointer");
+                    li.onclick = () => openChat(user);
+                    chatList.appendChild(li);
+                }
+            });
         });
 
-        socket.on("receiveNotification", (data) => {
-            alert(`📢 ${data.title}\n${data.message}`);
+        // Chuyển đổi giữa các cuộc trò chuyện
+        function openChat(user) {
+            currentChat = user;
+            chatTitle.textContent = user === "general" ? "💬 Chat Tổng" : `👤 Chat với ${user}`;
+            messages.innerHTML = "";
+        }
+
+        // Gửi tin nhắn
+        sendBtn.addEventListener("click", () => {
+            const message = messageInput.value.trim();
+            if (message) {
+                if (currentChat === "general") {
+                    socket.emit("sendMessage", { text: message });
+                } else {
+                    socket.emit("privateMessage", { toUsername: currentChat, message });
+                    const msgElement = document.createElement("div");
+                    msgElement.classList.add("p-2", "bg-blue-100", "rounded", "mb-1", "self-end");
+                    msgElement.innerHTML = `<strong>Bạn:</strong> ${message}`;
+                    messages.appendChild(msgElement);
+                    messages.scrollTop = messages.scrollHeight;
+                }
+                messageInput.value = "";
+            }
+        });
+
+
+        // Nhận tin nhắn chung
+        socket.on("receiveMessage", (data) => {
+            if (currentChat === "general") {
+                const msgElement = document.createElement("div");
+                msgElement.classList.add("p-2", "bg-gray-100", "rounded", "mb-1");
+                msgElement.innerHTML = `<strong>${data.user}:</strong> ${data.text}`;
+                messages.appendChild(msgElement);
+                messages.scrollTop = messages.scrollHeight;
+            }
+        });
+
+        // Nhận tin nhắn riêng
+        socket.on("receivePrivateMessage", (data) => {
+            if (currentChat === data.from || currentChat === username) {
+                const msgElement = document.createElement("div");
+                msgElement.classList.add("p-2", "bg-yellow-100", "rounded", "mb-1");
+                msgElement.innerHTML = `<strong>🔒 ${data.from}:</strong> ${data.text}`;
+                messages.appendChild(msgElement);
+                messages.scrollTop = messages.scrollHeight;
+            }
         });
     </script>
+
 </body>
 
 </html>
