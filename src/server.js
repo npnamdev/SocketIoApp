@@ -1,56 +1,84 @@
+require("dotenv").config();
 const express = require("express");
-const { createServer } = require("http");
+const http = require("http");
+const mongoose = require("mongoose");
+const cors = require("cors");
 const { Server } = require("socket.io");
-const path = require("path");
 
 const app = express();
-const server = createServer(app);
+const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
+const path = require("path");
 
 app.use(express.static(path.join(__dirname, "..", "public")));
 
-const users = {}; // Lưu user và socket ID
-const messages = { general: [] }; // Lưu tin nhắn, key là tên người dùng
+app.use(cors());
+app.use(express.json());
 
+// Danh sách người dùng (đơn giản, không lưu DB)
+const users = [
+  { username: "alice", password: "123" },
+  { username: "bob", password: "456" },
+  { username: "charlie", password: "789" },
+];
+
+// Danh sách user online
+let onlineUsers = [];
+
+// Mô hình tin nhắn MongoDB
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch(err => console.error("❌ DB connection error:", err));
+
+const MessageSchema = new mongoose.Schema({
+  username: String,
+  text: String,
+  timestamp: { type: Date, default: Date.now },
+});
+const Message = mongoose.model("Message", MessageSchema);
+
+// API lấy tin nhắn
+app.get("/api/messages", async (req, res) => {
+  const messages = await Message.find().sort({ timestamp: -1 }).limit(20);
+  res.json(messages.reverse());
+});
+
+// API đăng nhập
+app.post("/api/login", (req, res) => {
+  const { username, password } = req.body;
+  const user = users.find((u) => u.username === username && u.password === password);
+
+  if (user) {
+    res.json({ success: true, username });
+  } else {
+    res.status(401).json({ success: false, message: "Sai tên đăng nhập hoặc mật khẩu!" });
+  }
+});
+
+// Socket.IO xử lý chat
 io.on("connection", (socket) => {
-    console.log("🟢 User connected:", socket.id);
+  console.log(`🟢 User connected: ${socket.id}`);
 
-    // Khi user đăng nhập
-    socket.on("login", (username) => {
-        users[socket.id] = username;
-        messages[username] = messages[username] || [];
-        io.emit("userList", Object.values(users)); // Gửi danh sách user
-    });
+  socket.on("userJoined", (username) => {
+    if (!onlineUsers.includes(username)) {
+      onlineUsers.push(username);
+      io.emit("updateUsers", onlineUsers); // Gửi danh sách online
+    }
+  });
 
-    // Gửi tin nhắn chung
-    socket.on("sendMessage", (data) => {
-        messages.general.push({ user: users[socket.id], text: data.text });
-        io.emit("receiveMessage", { user: users[socket.id], text: data.text });
-    });
+  socket.on("sendMessage", async (data) => {
+    const { username, text } = data;
+    const message = new Message({ username, text });
+    await message.save();
+    io.emit("receiveMessage", message);
+  });
 
-    // Gửi tin nhắn riêng
-    socket.on("privateMessage", ({ toUsername, message }) => {
-        if (!messages[toUsername]) messages[toUsername] = [];
-        if (!messages[users[socket.id]]) messages[users[socket.id]] = [];
-
-        messages[toUsername].push({ from: users[socket.id], text: message });
-        messages[users[socket.id]].push({ from: users[socket.id], text: message });
-
-        const recipientSocket = Object.keys(users).find((id) => users[id] === toUsername);
-        if (recipientSocket) {
-            io.to(recipientSocket).emit("receivePrivateMessage", { from: users[socket.id], text: message });
-        }
-    });
-
-    // Khi user ngắt kết nối
-    socket.on("disconnect", () => {
-        console.log("🔴 User disconnected:", socket.id);
-        delete users[socket.id];
-        io.emit("userList", Object.values(users));
-    });
+  socket.on("disconnect", () => {
+    console.log(`🔴 User disconnected: ${socket.id}`);
+    onlineUsers = onlineUsers.filter((user) => user !== socket.username);
+    io.emit("updateUsers", onlineUsers);
+  });
 });
 
-const PORT = 5000;
-server.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
-});
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

@@ -1,113 +1,70 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Socket.IO Private Chat</title>
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <title>Chat App</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/socket.io/socket.io.js"></script>
 </head>
+<body class="flex items-center justify-center min-h-screen bg-gray-200">
 
-<body class="bg-gray-100 h-screen flex">
-
-    <!-- DANH SÁCH USER BÊN TRÁI -->
-    <div class="w-1/4 bg-white p-4 shadow-lg">
-        <h2 class="text-lg font-bold mb-3">📜 Danh sách Chat</h2>
-        <ul id="chatList" class="space-y-2">
-            <li class="p-2 bg-gray-200 rounded cursor-pointer" onclick="openChat('general')">💬 Chat Tổng</li>
-        </ul>
+    <!-- Giao diện đăng nhập -->
+    <div id="loginScreen" class="bg-white p-6 rounded-lg shadow-lg w-96">
+        <h2 class="text-2xl font-bold text-center mb-4">Login</h2>
+        <input id="username" type="text" placeholder="Username" class="w-full p-2 border rounded mb-2">
+        <input id="password" type="password" placeholder="Password" class="w-full p-2 border rounded mb-2">
+        <button id="loginBtn" class="w-full bg-blue-500 text-white py-2 rounded">Login</button>
+        <p id="errorText" class="text-red-500 text-sm mt-2 hidden">Sai tên đăng nhập hoặc mật khẩu!</p>
     </div>
 
-    <!-- NỘI DUNG CHAT BÊN PHẢI -->
-    <div class="w-3/4 p-4 flex flex-col">
-        <h2 class="text-lg font-bold mb-3" id="chatTitle">💬 Chat Tổng</h2>
-        <div id="messages" class="flex-1 overflow-y-auto border p-3 bg-gray-50 rounded"></div>
-        <div class="mt-2 flex">
-            <input id="messageInput" type="text" placeholder="Nhập tin nhắn..."
-                class="flex-1 p-2 border rounded outline-none">
-            <button id="sendBtn" class="ml-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded">
-                Gửi
-            </button>
-        </div>
+    <!-- Giao diện chat -->
+    <div id="chatScreen" class="hidden w-full h-dvh bg-white p-6 rounded-lg shadow-lg">
+        <h2 class="text-xl font-bold text-center mb-4">Chat Room</h2>
+        <div id="messages" class="h-[calc(100%-200px)] overflow-y-auto border p-3 rounded bg-gray-100"></div>
+        <input id="messageInput" type="text" placeholder="Nhập tin nhắn..." class="w-full p-2 border rounded mt-3">
+        <button id="sendBtn" class="w-full bg-green-500 text-white py-2 rounded mt-2">Gửi</button>
     </div>
 
     <script>
         const socket = io();
-        const chatList = document.getElementById("chatList");
-        const messages = document.getElementById("messages");
-        const chatTitle = document.getElementById("chatTitle");
-        const messageInput = document.getElementById("messageInput");
-        const sendBtn = document.getElementById("sendBtn");
+        let username = "";
 
-        let username = prompt("Nhập tên của bạn:");
-        socket.emit("login", username);
+        document.getElementById("loginBtn").addEventListener("click", async () => {
+            const user = document.getElementById("username").value;
+            const pass = document.getElementById("password").value;
 
-        let currentChat = "general";
-
-        // Cập nhật danh sách người dùng
-        socket.on("userList", (users) => {
-            chatList.innerHTML = `<li class="p-2 bg-gray-200 rounded cursor-pointer" onclick="openChat('general')">💬 Chat Tổng</li>`;
-            users.forEach((user) => {
-                if (user !== username) {
-                    const li = document.createElement("li");
-                    li.textContent = `👤 ${user}`;
-                    li.classList.add("p-2", "bg-gray-100", "rounded", "cursor-pointer");
-                    li.onclick = () => openChat(user);
-                    chatList.appendChild(li);
-                }
+            const response = await fetch("/api/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username: user, password: pass })
             });
-        });
 
-        // Chuyển đổi giữa các cuộc trò chuyện
-        function openChat(user) {
-            currentChat = user;
-            chatTitle.textContent = user === "general" ? "💬 Chat Tổng" : `👤 Chat với ${user}`;
-            messages.innerHTML = "";
-        }
-
-        // Gửi tin nhắn
-        sendBtn.addEventListener("click", () => {
-            const message = messageInput.value.trim();
-            if (message) {
-                if (currentChat === "general") {
-                    socket.emit("sendMessage", { text: message });
-                } else {
-                    socket.emit("privateMessage", { toUsername: currentChat, message });
-                    const msgElement = document.createElement("div");
-                    msgElement.classList.add("p-2", "bg-blue-100", "rounded", "mb-1", "self-end");
-                    msgElement.innerHTML = `<strong>Bạn:</strong> ${message}`;
-                    messages.appendChild(msgElement);
-                    messages.scrollTop = messages.scrollHeight;
-                }
-                messageInput.value = "";
+            const data = await response.json();
+            if (data.success) {
+                username = data.username;
+                document.getElementById("loginScreen").classList.add("hidden");
+                document.getElementById("chatScreen").classList.remove("hidden");
+                socket.emit("userJoined", username);
+            } else {
+                document.getElementById("errorText").classList.remove("hidden");
             }
         });
 
+        document.getElementById("sendBtn").addEventListener("click", () => {
+            const message = document.getElementById("messageInput").value;
+            if (message.trim() !== "") {
+                socket.emit("sendMessage", { username, text: message });
+                document.getElementById("messageInput").value = "";
+            }
+        });
 
-        // Nhận tin nhắn chung
         socket.on("receiveMessage", (data) => {
-            if (currentChat === "general") {
-                const msgElement = document.createElement("div");
-                msgElement.classList.add("p-2", "bg-gray-100", "rounded", "mb-1");
-                msgElement.innerHTML = `<strong>${data.user}:</strong> ${data.text}`;
-                messages.appendChild(msgElement);
-                messages.scrollTop = messages.scrollHeight;
-            }
-        });
-
-        // Nhận tin nhắn riêng
-        socket.on("receivePrivateMessage", (data) => {
-            if (currentChat === data.from || currentChat === username) {
-                const msgElement = document.createElement("div");
-                msgElement.classList.add("p-2", "bg-yellow-100", "rounded", "mb-1");
-                msgElement.innerHTML = `<strong>🔒 ${data.from}:</strong> ${data.text}`;
-                messages.appendChild(msgElement);
-                messages.scrollTop = messages.scrollHeight;
-            }
+            const msgContainer = document.getElementById("messages");
+            msgContainer.innerHTML += `<p><strong>${data.username}:</strong> ${data.text}</p>`;
+            msgContainer.scrollTop = msgContainer.scrollHeight;
         });
     </script>
 
 </body>
-
 </html>
